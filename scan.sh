@@ -2,6 +2,6 @@
 . config.cfg
 listManaged=$(ssh $HMCuser@$HMCserver "lssyscfg -r sys -F name")
 for i in $listManaged; do
-	ssh $HMCuser@$HMCserver "lssyscfg -m $i"
+	ssh $HMCuser@$HMCserver "lssyscfg -r lpar -m $i"
 done
 
