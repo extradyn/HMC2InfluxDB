@@ -1,5 +1,9 @@
 #!/bin/bash
 . config.cfg
+
+
+>/tmp/HMC2InfluxDB.data
+
 echo "Get Managed Systems List"
 hmcList=$(echo $HMCserver | cut -d\= -f2)
 IFS="," read -r -a hmcArray <<< "$hmcList"
@@ -9,7 +13,7 @@ for hmcServer in "${hmcArray[@]}"; do
 	for managedServer in $listManaged; do
 		echo "Processing : $managedServer"
 		ssh $HMCuser@$hmcServer "lssyscfg -r lpar -m $managedServer" >/tmp/$hmcServer.$managedServer.lssyscfg.tmp
-		ssh $HMCuser@$hmcServer "lslparutil -m $managedServer -r all -h 1" >/tmp/$hmcServer.$managedServer.lslparutil.tmp
+		ssh $HMCuser@$hmcServer "lslparutil -m $managedServer -r all -h 1 " >/tmp/$hmcServer.$managedServer.lslparutil.tmp
 	done
 done
 echo "Done retrieving data."
@@ -21,7 +25,7 @@ for hmcServer in "${hmcArray[@]}"; do
         echo "Process Managed Server on HMC $hmcServer"
         for managedServer in $listManaged; do
                 echo "Processing : $managedServer"
-
+(	
 	cat /tmp/$hmcServer.$managedServer.lslparutil.tmp | while read line; do
         	outputline="lslparutil"
         	tags=",managedSystem=$managedServer,hmc=$hmcServer"
@@ -44,13 +48,6 @@ for hmcServer in "${hmcArray[@]}"; do
                 	elif [ "$(echo "$index" | grep -i cycle)"x = "x" ]; then
                         	tags=$tags,$index=$element
                 	else
-                        	if [ "$index"x = "capped_cycles"x ]; then
-                                	capped_cycles=$element
-                        	elif [ "$index"x = "uncapped_cycles"x ]; then
-                                	uncapped_cycles=$element
-                        	elif [ "$index"x = "entitled_cycles"x ]; then
-                                	entitled_cycles=$element
-                        	fi
 
                         	if [ "$metrics"x = "x" ]; then
                                 	metrics=$index=$element
@@ -59,18 +56,17 @@ for hmcServer in "${hmcArray[@]}"; do
                         	fi
                 	fi
         	done
-        	echo $uncapped_cycles
-        	if [ "$uncapped_cycles"x = "0x" ]; then
-                	metrics=$metrics
-        	else
-                	entpct=$(echo "scale=5; ($capped_cycles+$uncapped_cycles)/$entitled_cycles*100.0" | bc)
-                	metrics=$metrics,entpct=$entpct
-        	fi
         	outputline="$outputline$tags $metrics ${timestamp}"
-        	echo $outputline
-        	curl -d "$outputline" -X POST http://localhost:8086/write?db=hmc&u=root&p=root
-		done
+		echo $outputline
+		done >/tmp/$hmcServer.$managedServer.lslparutil.out
+		wc -l /tmp/$hmcServer.$managedServer.lslparutil.out
+		echo curl --data-binary "@/tmp/$hmcServer.$managedServer.lslparutil.out" -X POST "http://localhost:8086/write?db=hmc&u=root&p=root"
+		curl --data-binary "@/tmp/$hmcServer.$managedServer.lslparutil.out" -X POST "http://localhost:8086/write?db=hmc&u=root&p=root"
+) &		 
+		#rm /tmp/$hmcServer.$managedServer.lslparutil.out
+		#rm /tmp/$hmcServer.$managedServer.lslparutil.tmp
+
 	done
-	rm /tmp/$hmcServer.$managedServer.lslparutil.tmp
 done
+wait
 
